@@ -16,7 +16,9 @@ describe('env.validation validate()', () => {
   it('throws a clear error when DATABASE_URL is missing', () => {
     expect.assertions(3);
 
-    expect(() => validate({ PORT: 3000, NODE_ENV: 'test' })).toThrow(/DATABASE_URL/);
+    expect(() => validate({ PORT: 3000, NODE_ENV: 'test' })).toThrow(
+      /DATABASE_URL/,
+    );
 
     try {
       validate({ PORT: 3000, NODE_ENV: 'test' });
@@ -35,7 +37,9 @@ describe('env.validation validate()', () => {
 
   it('passes validation and applies defaults when DATABASE_URL is present', () => {
     const result = validate({
-      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/realtime_task_board?schema=public',
+      DATABASE_URL:
+        'postgresql://postgres:postgres@localhost:5432/realtime_task_board?schema=public',
+      JWT_SECRET: 'a'.repeat(32),
     });
 
     expect(result.DATABASE_URL).toBe(
@@ -44,14 +48,31 @@ describe('env.validation validate()', () => {
     // Defaults kick in when not supplied.
     expect(result.PORT).toBe(3000);
     expect(result.NODE_ENV).toBe('development');
+    expect(result.JWT_EXPIRES_IN).toBe('1h');
   });
 
   it('rejects an out-of-range PORT even when DATABASE_URL is valid', () => {
     expect(() =>
       validate({
         DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',
+        JWT_SECRET: 'a'.repeat(32),
         PORT: 70000,
       }),
     ).toThrow();
+  });
+
+  it('throws a clear error when JWT_SECRET is missing or too short', () => {
+    expect(() =>
+      validate({
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',
+      }),
+    ).toThrow(/JWT_SECRET/);
+
+    expect(() =>
+      validate({
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',
+        JWT_SECRET: 'too-short',
+      }),
+    ).toThrow(/JWT_SECRET/);
   });
 });

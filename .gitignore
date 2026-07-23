@@ -49,3 +49,6 @@ prisma/generated/
 explanations/
 Necessary_files/
 Real-Time-Task-Management-dev-docs/
+
+# Agent definitions — local orchestration config, not tracked in this repo
+.claude/
