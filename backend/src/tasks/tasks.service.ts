@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Task, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthenticatedUser, taskScopeWhere } from './task-access.guard';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
@@ -17,38 +18,79 @@ export class TasksService {
   }
 
   /**
-   * No role/ownership filtering here on purpose — that shared `where`-clause
-   * scoping is STORY-004's job (task-access.guard.ts), so it isn't
-   * duplicated per-route.
+   * `taskScopeWhere` (task-access.guard.ts) is the single shared rule:
+   * admin -> `{}` (sees everything), user -> `{ ownerId: user.userId }`.
+   * Merged straight into the Prisma `where`, so scoping happens in the
+   * query itself rather than fetch-all-then-filter-in-JS.
    */
-  findAll(status?: TaskStatus): Promise<Task[]> {
+  findAll(user: AuthenticatedUser, status?: TaskStatus): Promise<Task[]> {
     return this.prisma.task.findMany({
-      where: status ? { status } : undefined,
+      where: { ...taskScopeWhere(user), ...(status ? { status } : {}) },
     });
   }
 
-  async findOne(id: string): Promise<Task> {
-    return this.getTaskOrThrow(id);
-  }
-
-  async update(id: string, dto: UpdateTaskDto): Promise<Task> {
-    await this.getTaskOrThrow(id);
-    return this.prisma.task.update({ where: { id }, data: dto });
-  }
-
-  async remove(id: string): Promise<Task> {
-    await this.getTaskOrThrow(id);
-    return this.prisma.task.delete({ where: { id } });
+  async findOne(user: AuthenticatedUser, id: string): Promise<Task> {
+    return this.getTaskOrThrow(user, id);
   }
 
   /**
-   * Shared not-found handling so a bad/unknown id always surfaces as Nest's
-   * NotFoundException (404) instead of a raw Prisma "not found" error
-   * (P2025) leaking out of the service.
+   * The update itself is scoped in the same query (`where: { id,
+   * ...taskScopeWhere(user) }`) rather than checked-then-acted-on in two
+   * separate queries — this avoids a TOCTOU gap and saves a round-trip.
+   * Prisma's extended-where-unique-fields support lets us merge the scope
+   * filter alongside the unique `id` here, same as `getTaskOrThrow` does
+   * for reads.
    */
-  private async getTaskOrThrow(id: string): Promise<Task> {
+  async update(
+    user: AuthenticatedUser,
+    id: string,
+    dto: UpdateTaskDto,
+  ): Promise<Task> {
+    return this.runScopedOrThrow(id, () =>
+      this.prisma.task.update({
+        where: { id, ...taskScopeWhere(user) },
+        data: dto,
+      }),
+    );
+  }
+
+  async remove(user: AuthenticatedUser, id: string): Promise<Task> {
+    return this.runScopedOrThrow(id, () =>
+      this.prisma.task.delete({
+        where: { id, ...taskScopeWhere(user) },
+      }),
+    );
+  }
+
+  /**
+   * Shared not-found + scoping handling: a bad/unknown id, OR a `user`-role
+   * request for a task it doesn't own, both surface identically as a 404
+   * (NotFoundException) — the scoped query simply finds nothing in the
+   * cross-owner case, so no separate 403 branch/data-leak risk exists here.
+   */
+  private async getTaskOrThrow(
+    user: AuthenticatedUser,
+    id: string,
+  ): Promise<Task> {
+    return this.runScopedOrThrow(id, () =>
+      this.prisma.task.findUniqueOrThrow({
+        where: { id, ...taskScopeWhere(user) },
+      }),
+    );
+  }
+
+  /**
+   * Runs a scoped Prisma call (find/update/delete, each already filtered by
+   * `taskScopeWhere(user)` in its own `where`) and translates Prisma's
+   * "no matching row" error (P2025) — covering both an unknown id and a
+   * `user`-role request for a task it doesn't own — into a 404.
+   */
+  private async runScopedOrThrow(
+    id: string,
+    run: () => Promise<Task>,
+  ): Promise<Task> {
     try {
-      return await this.prisma.task.findUniqueOrThrow({ where: { id } });
+      return await run();
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
