@@ -4,7 +4,14 @@ import { TaskList } from './TaskList';
 describe('TaskList', () => {
   it('renders the empty state when there are no tasks', () => {
     render(
-      <TaskList tasks={[]} loading={false} error={null} currentUser={null} />,
+      <TaskList
+        tasks={[]}
+        loading={false}
+        error={null}
+        currentUser={null}
+        onEdit={() => {}}
+        onDelete={() => {}}
+      />,
     );
 
     expect(screen.getByText('No tasks yet.')).toBeInTheDocument();
@@ -17,6 +24,8 @@ describe('TaskList', () => {
         loading={false}
         error="Failed to load tasks"
         currentUser={null}
+        onEdit={() => {}}
+        onDelete={() => {}}
       />,
     );
 
