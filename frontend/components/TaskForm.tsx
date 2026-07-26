@@ -38,6 +38,12 @@ export function TaskForm({ task, onSuccess, onCancel }: TaskFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
+  // Fully separate from submitting/errors above (STORY-011, architect
+  // ruling): the Summarise action and the Save action never clear or
+  // interact with each other's state.
+  const [summarizing, setSummarizing] = useState(false);
+  const [summarizeError, setSummarizeError] = useState<string | null>(null);
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErrors([]);
@@ -79,6 +85,45 @@ export function TaskForm({ task, onSuccess, onCancel }: TaskFormProps) {
     }
   }
 
+  async function handleSummarize() {
+    // Defense in depth: the button is already disabled when title is blank,
+    // this just guards against programmatic/keyboard-triggered clicks.
+    if (title.trim() === '') return;
+
+    setSummarizeError(null);
+    setSummarizing(true);
+
+    try {
+      const response = await apiFetch('/tasks/summarize', {
+        method: 'POST',
+        body: JSON.stringify({ title, description }),
+      });
+
+      if (!response.ok) {
+        let message = 'Something went wrong. Please try again.';
+        try {
+          const body: { message?: string | string[] } = await response.json();
+          if (Array.isArray(body.message)) {
+            message = body.message.join(' ');
+          } else if (typeof body.message === 'string') {
+            message = body.message;
+          }
+        } catch {
+          // keep the generic fallback message
+        }
+        setSummarizeError(message);
+        return;
+      }
+
+      const body: { description: string } = await response.json();
+      setDescription(body.description);
+    } catch {
+      setSummarizeError('Something went wrong. Please try again.');
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -107,9 +152,28 @@ export function TaskForm({ task, onSuccess, onCancel }: TaskFormProps) {
         className="mb-4 w-full rounded border border-black/20 px-3 py-2 text-sm dark:border-white/20 dark:bg-black"
       />
 
-      <label htmlFor="description" className="mb-1 block text-sm font-medium">
-        Description
-      </label>
+      <div className="mb-1 flex items-center justify-between">
+        <label htmlFor="description" className="block text-sm font-medium">
+          Description
+        </label>
+        <button
+          type="button"
+          onClick={handleSummarize}
+          // Unlike the title input above, this trim-aware disabled check is
+          // deliberate (AC1: "nothing to summarize" when title is blank) —
+          // not an inconsistency to unify with the Save button's guard-free
+          // behavior, which exists for a different, unrelated test reason.
+          disabled={summarizing || title.trim() === ''}
+          className="rounded border border-black/20 px-2 py-1 text-xs font-medium text-black/70 disabled:opacity-60 dark:border-white/20 dark:text-white/70"
+        >
+          {summarizing ? 'Summarising…' : 'AI Summarise'}
+        </button>
+      </div>
+      {summarizeError && (
+        <p data-testid="summarize-error" className="mb-2 text-sm text-red-600">
+          {summarizeError}
+        </p>
+      )}
       <textarea
         id="description"
         name="description"
