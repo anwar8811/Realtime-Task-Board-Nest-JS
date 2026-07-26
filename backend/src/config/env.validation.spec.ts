@@ -49,6 +49,7 @@ describe('env.validation validate()', () => {
     expect(result.PORT).toBe(3000);
     expect(result.NODE_ENV).toBe('development');
     expect(result.JWT_EXPIRES_IN).toBe('1h');
+    expect(result.FRONTEND_ORIGIN).toBe('http://localhost:3001');
   });
 
   it('rejects an out-of-range PORT even when DATABASE_URL is valid', () => {

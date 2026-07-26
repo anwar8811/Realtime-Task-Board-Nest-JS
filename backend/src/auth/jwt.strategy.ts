@@ -2,12 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { UserRole } from '@prisma/client';
-
-interface JwtPayload {
-  sub: string;
-  role: UserRole;
-}
+import { JwtPayload, toAuthenticatedUser } from './jwt-payload';
 
 /**
  * Verifies the Bearer token's signature/expiry and turns the payload into
@@ -25,6 +20,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: JwtPayload) {
-    return { userId: payload.sub, role: payload.role };
+    return toAuthenticatedUser(payload);
   }
 }

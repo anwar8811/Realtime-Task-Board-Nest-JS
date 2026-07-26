@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Prisma, TaskStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from './task-access.guard';
+import { TasksGateway } from './tasks.gateway';
 import { TasksService } from './tasks.service';
 
 describe('TasksService', () => {
@@ -14,6 +15,11 @@ describe('TasksService', () => {
       update: jest.Mock;
       delete: jest.Mock;
     };
+  };
+  let gateway: {
+    emitTaskCreated: jest.Mock;
+    emitTaskUpdated: jest.Mock;
+    emitTaskDeleted: jest.Mock;
   };
 
   const adminUser: AuthenticatedUser = {
@@ -36,7 +42,16 @@ describe('TasksService', () => {
       },
     };
 
-    service = new TasksService(prisma as unknown as PrismaService);
+    gateway = {
+      emitTaskCreated: jest.fn(),
+      emitTaskUpdated: jest.fn(),
+      emitTaskDeleted: jest.fn(),
+    };
+
+    service = new TasksService(
+      prisma as unknown as PrismaService,
+      gateway as unknown as TasksGateway,
+    );
   });
 
   describe('findAll', () => {
@@ -197,6 +212,101 @@ describe('TasksService', () => {
       expect(prisma.task.delete).toHaveBeenCalledWith({
         where: { id: 'unknown-id', ownerId: regularUser.userId },
       });
+    });
+  });
+
+  describe('realtime emission (STORY-008)', () => {
+    it('create: emits `task.created` via the gateway exactly once with the created task, after the write succeeds', async () => {
+      const task = { id: 'task-1', ownerId: regularUser.userId };
+      prisma.task.create.mockResolvedValue(task);
+
+      const result = await service.create(regularUser.userId, {
+        title: 'new task',
+      });
+
+      expect(result).toBe(task);
+      expect(gateway.emitTaskCreated).toHaveBeenCalledTimes(1);
+      expect(gateway.emitTaskCreated).toHaveBeenCalledWith(task);
+      expect(gateway.emitTaskUpdated).not.toHaveBeenCalled();
+      expect(gateway.emitTaskDeleted).not.toHaveBeenCalled();
+    });
+
+    it('update: emits `task.updated` via the gateway exactly once with the updated task, after the write succeeds', async () => {
+      const task = { id: 'task-1', ownerId: regularUser.userId };
+      prisma.task.update.mockResolvedValue(task);
+
+      const result = await service.update(regularUser, 'task-1', {
+        title: 'new title',
+      });
+
+      expect(result).toBe(task);
+      expect(gateway.emitTaskUpdated).toHaveBeenCalledTimes(1);
+      expect(gateway.emitTaskUpdated).toHaveBeenCalledWith(task);
+      expect(gateway.emitTaskCreated).not.toHaveBeenCalled();
+      expect(gateway.emitTaskDeleted).not.toHaveBeenCalled();
+    });
+
+    it("update: an admin editing another user's task emits into that task's own `ownerId` (from the Prisma row), not the admin's id", async () => {
+      const task = { id: 'task-1', ownerId: 'someone-else' };
+      prisma.task.update.mockResolvedValue(task);
+
+      await service.update(adminUser, 'task-1', { title: 'new title' });
+
+      expect(gateway.emitTaskUpdated).toHaveBeenCalledWith(task);
+    });
+
+    it('remove: emits `task.deleted` via the gateway exactly once with `{id, ownerId}` derived from the deleted row, after the write succeeds', async () => {
+      const task = { id: 'task-1', ownerId: regularUser.userId };
+      prisma.task.delete.mockResolvedValue(task);
+
+      const result = await service.remove(regularUser, 'task-1');
+
+      expect(result).toBe(task);
+      expect(gateway.emitTaskDeleted).toHaveBeenCalledTimes(1);
+      expect(gateway.emitTaskDeleted).toHaveBeenCalledWith(
+        task.id,
+        task.ownerId,
+      );
+      expect(gateway.emitTaskCreated).not.toHaveBeenCalled();
+      expect(gateway.emitTaskUpdated).not.toHaveBeenCalled();
+    });
+
+    it("remove: an admin deleting another user's task emits into that OTHER user's ownerId, not the admin's own id", async () => {
+      const task = { id: 'task-1', ownerId: 'someone-else' };
+      prisma.task.delete.mockResolvedValue(task);
+
+      await service.remove(adminUser, 'task-1');
+
+      expect(gateway.emitTaskDeleted).toHaveBeenCalledWith(
+        'task-1',
+        'someone-else',
+      );
+    });
+
+    it('update: a not-found (404) path emits nothing', async () => {
+      const notFoundError = new Prisma.PrismaClientKnownRequestError(
+        'No Task found',
+        { code: 'P2025', clientVersion: '6.19.2' },
+      );
+      prisma.task.update.mockRejectedValue(notFoundError);
+
+      await expect(
+        service.update(regularUser, 'unknown-id', { title: 'new title' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(gateway.emitTaskUpdated).not.toHaveBeenCalled();
+    });
+
+    it('remove: a not-found (404) path emits nothing', async () => {
+      const notFoundError = new Prisma.PrismaClientKnownRequestError(
+        'No Task found',
+        { code: 'P2025', clientVersion: '6.19.2' },
+      );
+      prisma.task.delete.mockRejectedValue(notFoundError);
+
+      await expect(
+        service.remove(regularUser, 'unknown-id'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(gateway.emitTaskDeleted).not.toHaveBeenCalled();
     });
   });
 });

@@ -2,19 +2,27 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Task, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser, taskScopeWhere } from './task-access.guard';
+import { TasksGateway } from './tasks.gateway';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: TasksGateway,
+  ) {}
 
   /**
    * `ownerId` always comes from the verified JWT (request.user.userId) in
-   * the controller — never from the DTO/request body.
+   * the controller — never from the DTO/request body. The realtime event
+   * only fires after the write has actually succeeded (never before, and
+   * never from the controller).
    */
-  create(ownerId: string, dto: CreateTaskDto): Promise<Task> {
-    return this.prisma.task.create({ data: { ...dto, ownerId } });
+  async create(ownerId: string, dto: CreateTaskDto): Promise<Task> {
+    const task = await this.prisma.task.create({ data: { ...dto, ownerId } });
+    this.gateway.emitTaskCreated(task);
+    return task;
   }
 
   /**
@@ -46,20 +54,27 @@ export class TasksService {
     id: string,
     dto: UpdateTaskDto,
   ): Promise<Task> {
-    return this.runScopedOrThrow(id, () =>
+    const task = await this.runScopedOrThrow(id, () =>
       this.prisma.task.update({
         where: { id, ...taskScopeWhere(user) },
         data: dto,
       }),
     );
+    this.gateway.emitTaskUpdated(task);
+    return task;
   }
 
   async remove(user: AuthenticatedUser, id: string): Promise<Task> {
-    return this.runScopedOrThrow(id, () =>
+    const task = await this.runScopedOrThrow(id, () =>
       this.prisma.task.delete({
         where: { id, ...taskScopeWhere(user) },
       }),
     );
+    // `ownerId` comes from the Prisma-returned deleted row, never from the
+    // acting user — an admin deleting another user's task must emit into
+    // that OTHER user's room, not the admin's own.
+    this.gateway.emitTaskDeleted(task.id, task.ownerId);
+    return task;
   }
 
   /**

@@ -37,6 +37,10 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   JWT_EXPIRES_IN: string = '1h';
+
+  @IsOptional()
+  @IsString()
+  FRONTEND_ORIGIN: string = 'http://localhost:3001';
 }
 
 export function validate(config: Record<string, unknown>) {
