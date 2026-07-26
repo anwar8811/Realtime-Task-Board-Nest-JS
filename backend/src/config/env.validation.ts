@@ -17,6 +17,8 @@ enum Environment {
   Test = 'test',
 }
 
+export const DEFAULT_OPENROUTER_MODEL = 'google/gemma-4-26b-a4b-it:free';
+
 class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
@@ -41,6 +43,19 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   FRONTEND_ORIGIN: string = 'http://localhost:3001';
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  OPENROUTER_MODEL: string = DEFAULT_OPENROUTER_MODEL;
+
+  // Genuinely optional, no default — the app (and STORY-014's Docker
+  // Compose / every existing e2e test) must boot fine with no key present.
+  // AiService reads this at call time and returns 503 if it's missing.
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  OPENROUTER_API_KEY?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

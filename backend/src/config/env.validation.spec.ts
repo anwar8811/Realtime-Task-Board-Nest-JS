@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { validate } from './env.validation';
+import { DEFAULT_OPENROUTER_MODEL, validate } from './env.validation';
 
 /**
  * STORY-001 Test Scenario: "App fails to boot with a clear error if
@@ -50,6 +50,43 @@ describe('env.validation validate()', () => {
     expect(result.NODE_ENV).toBe('development');
     expect(result.JWT_EXPIRES_IN).toBe('1h');
     expect(result.FRONTEND_ORIGIN).toBe('http://localhost:3001');
+    expect(result.OPENROUTER_MODEL).toBe(DEFAULT_OPENROUTER_MODEL);
+  });
+
+  /**
+   * STORY-010: the AI endpoint's env vars must never block boot. The app
+   * (and every existing e2e test, plus STORY-014's Docker Compose) has to
+   * start fine whether or not AI is configured.
+   */
+  it('defaults OPENROUTER_MODEL to the free-tier model when absent', () => {
+    const result = validate({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',
+      JWT_SECRET: 'a'.repeat(32),
+    });
+
+    expect(result.OPENROUTER_MODEL).toBe(DEFAULT_OPENROUTER_MODEL);
+    expect(result.OPENROUTER_MODEL).toBe('google/gemma-4-26b-a4b-it:free');
+  });
+
+  it('does not fail validation when OPENROUTER_API_KEY is absent (AI is optional)', () => {
+    const result = validate({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',
+      JWT_SECRET: 'a'.repeat(32),
+    });
+
+    expect(result.OPENROUTER_API_KEY).toBeUndefined();
+  });
+
+  it('accepts a custom OPENROUTER_MODEL and a present OPENROUTER_API_KEY', () => {
+    const result = validate({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',
+      JWT_SECRET: 'a'.repeat(32),
+      OPENROUTER_MODEL: 'some/other-model:free',
+      OPENROUTER_API_KEY: 'sk-or-test-key',
+    });
+
+    expect(result.OPENROUTER_MODEL).toBe('some/other-model:free');
+    expect(result.OPENROUTER_API_KEY).toBe('sk-or-test-key');
   });
 
   it('rejects an out-of-range PORT even when DATABASE_URL is valid', () => {
