@@ -224,11 +224,23 @@ There is exactly one place this rule is implemented (`taskScopeWhere` in the bac
 
 **Backend:**
 
+The e2e suite runs against its own dedicated Postgres database — never the dev
+database from `backend/.env`. One-time setup:
+
 ```bash
 cd backend
-npm run test         # unit tests
-npm run test:e2e     # e2e tests (Supertest + real Socket.io connections against a test DB)
+createdb realtime_task_board_test        # a second, empty local database
+cp .env.test.example .env.test           # then edit DATABASE_URL/JWT_SECRET etc. for your machine
 ```
+
+Then, any time:
+
+```bash
+npm run test         # unit tests
+npm run test:e2e     # e2e tests (Supertest + real Socket.io connections against the test DB)
+```
+
+`test:e2e` resets `realtime_task_board_test` (via `prisma migrate reset --force --skip-seed`) once before the whole run, so each run starts from a clean, fully-migrated schema regardless of what a previous run left behind.
 
 **Frontend:**
 

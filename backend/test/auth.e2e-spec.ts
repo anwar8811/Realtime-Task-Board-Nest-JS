@@ -166,25 +166,33 @@ describe('Auth (e2e)', () => {
       expect(body.role).toBe('user');
     });
 
-    it('the seeded admin account token decodes to role=admin via /auth/me', async () => {
-      const adminEmail = process.env.ADMIN_EMAIL;
-      const adminPassword = process.env.ADMIN_PASSWORD;
+    it('an admin account token decodes to role=admin via /auth/me', async () => {
+      // Self-contained admin fixture: register a normal user via the API,
+      // then promote it directly through Prisma (mirrors the admin fixture
+      // pattern in tasks-rbac.e2e-spec.ts) — no dependency on ADMIN_EMAIL/
+      // ADMIN_PASSWORD or on `prisma db seed` having been run against this
+      // database.
+      const adminEmail = `story002-admin-${randomUUID()}@example.com`;
+      const adminPassword = testPassword;
+      createdEmails.push(adminEmail);
 
-      if (!adminEmail || !adminPassword) {
-        throw new Error(
-          'ADMIN_EMAIL/ADMIN_PASSWORD must be set (see backend/.env) for this test to run against the seeded admin account.',
-        );
-      }
-
-      const loginResponse = await request(app.getHttpServer())
-        .post('/auth/login')
+      await request(app.getHttpServer())
+        .post('/auth/register')
         .send({ email: adminEmail, password: adminPassword })
         .expect(201);
 
       const adminDbUser = await prisma.user.findUnique({
         where: { email: adminEmail },
       });
-      expect(adminDbUser?.role).toBe('admin');
+      await prisma.user.update({
+        where: { id: adminDbUser!.id },
+        data: { role: 'admin' },
+      });
+
+      const loginResponse = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: adminEmail, password: adminPassword })
+        .expect(201);
 
       const meResponse = await request(app.getHttpServer())
         .get('/auth/me')

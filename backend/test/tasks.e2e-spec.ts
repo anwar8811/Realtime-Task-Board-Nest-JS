@@ -136,4 +136,46 @@ describe('Tasks (e2e)', () => {
         .expect(404);
     });
   });
+
+  describe('owner CRUD success', () => {
+    it('GET, then PATCH, then DELETE (followed by a 404 GET) all succeed for the owning user', async () => {
+      const createResponse = await authed()
+        .send({ title: 'owner CRUD task', description: 'original description' })
+        .expect(201);
+
+      const taskId = (createResponse.body as { id: string }).id;
+
+      const getResponse = await request(app.getHttpServer())
+        .get(`/tasks/${taskId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(getResponse.body).toMatchObject({
+        id: taskId,
+        title: 'owner CRUD task',
+        description: 'original description',
+        ownerId: userId,
+      });
+
+      const patchResponse = await request(app.getHttpServer())
+        .patch(`/tasks/${taskId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ title: 'owner CRUD task (updated)' })
+        .expect(200);
+
+      expect((patchResponse.body as { title: string }).title).toBe(
+        'owner CRUD task (updated)',
+      );
+
+      await request(app.getHttpServer())
+        .delete(`/tasks/${taskId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get(`/tasks/${taskId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(404);
+    });
+  });
 });
