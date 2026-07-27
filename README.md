@@ -14,7 +14,8 @@ Built with **NestJS + Prisma + PostgreSQL** on the backend and **Next.js (App Ro
 - [Tech Stack](#tech-stack)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
+- [Running with Docker](#running-with-docker)
+- [Getting Started (local dev, without Docker)](#getting-started-local-dev-without-docker)
   - [Prerequisites](#prerequisites)
   - [1. Clone and install](#1-clone-and-install)
   - [2. Configure environment variables](#2-configure-environment-variables)
@@ -108,7 +109,50 @@ Built with **NestJS + Prisma + PostgreSQL** on the backend and **Next.js (App Ro
     └── lib/                       # api client, auth context, socket factory
 ```
 
-## Getting Started
+## Running with Docker
+
+The fastest way to run the whole stack (Postgres + backend + frontend) — no local Node.js or Postgres install needed, just Docker.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) with Compose v2 (`docker compose version`)
+
+### 1. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and fill in real values — at minimum `POSTGRES_PASSWORD`, `JWT_SECRET` (32+ characters), and `ADMIN_EMAIL`/`ADMIN_PASSWORD`. `OPENROUTER_API_KEY` can stay empty (AI Summarise will return `503` until it's set — everything else works normally).
+
+### 2. Bring up the stack
+
+```bash
+docker compose up --build
+```
+
+This starts Postgres, then the backend (which automatically applies any pending database migrations via `prisma migrate deploy` on every start, before the API boots), then the frontend. No manual step beyond editing `.env` is required to reach a working app.
+
+- Frontend: `http://localhost:3001`
+- Backend API: `http://localhost:3000`
+
+### 3. Create the first admin account (one-time, manual)
+
+```bash
+docker compose exec backend node dist/prisma/seed.js
+```
+
+This uses `ADMIN_EMAIL`/`ADMIN_PASSWORD` from `.env` to create the single bootstrap admin, exactly like the local-dev seed step below. It's idempotent (safe to re-run) but is never run automatically on container start, so it won't re-fire on every `docker compose up`.
+
+(Note: this runs the already-compiled seed script directly, rather than `npx prisma db seed` — the production image intentionally doesn't ship `ts-node`/`typescript`, which `prisma db seed`'s default command needs, to keep the image small.)
+
+### Notes
+
+- `NEXT_PUBLIC_API_URL` is baked into the frontend's JS bundle at **build** time (a Next.js requirement for `NEXT_PUBLIC_*` variables — see `frontend/Dockerfile`). If you change it in `.env`, you must rebuild that image: `docker compose build frontend`, not just restart the container.
+- To run the backend/frontend test suites, use the local-dev setup below (`npm run test`) — the test suites are not run inside the Docker images.
+- To stop and remove the containers (keeping the database volume): `docker compose down`. To also wipe the database: `docker compose down -v`.
+
+## Getting Started (local dev, without Docker)
 
 ### Prerequisites
 

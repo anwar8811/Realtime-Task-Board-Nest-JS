@@ -77,6 +77,20 @@ describe('env.validation validate()', () => {
     expect(result.OPENROUTER_API_KEY).toBeUndefined();
   });
 
+  // STORY-014: Docker Compose (and dotenv generally) turn a declared-but-
+  // blank `OPENROUTER_API_KEY=` into an empty string, not an absent key.
+  // @IsOptional() only skips null/undefined, so this must not also require
+  // @IsNotEmpty() or the app crashes at boot in exactly this configuration.
+  it('does not fail validation when OPENROUTER_API_KEY is an empty string', () => {
+    const result = validate({
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',
+      JWT_SECRET: 'a'.repeat(32),
+      OPENROUTER_API_KEY: '',
+    });
+
+    expect(result.OPENROUTER_API_KEY).toBe('');
+  });
+
   it('accepts a custom OPENROUTER_MODEL and a present OPENROUTER_API_KEY', () => {
     const result = validate({
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/db',

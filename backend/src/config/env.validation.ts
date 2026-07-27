@@ -52,9 +52,15 @@ class EnvironmentVariables {
   // Genuinely optional, no default — the app (and STORY-014's Docker
   // Compose / every existing e2e test) must boot fine with no key present.
   // AiService reads this at call time and returns 503 if it's missing.
+  //
+  // No @IsNotEmpty() here deliberately: @IsOptional() only skips validation
+  // for null/undefined, not for an empty string — and Docker Compose's env
+  // interpolation (and dotenv) both turn an unset-but-declared
+  // `OPENROUTER_API_KEY=` into an empty string, not an absent key. AiService
+  // already treats an empty string as "not configured" at call time, so
+  // requiring non-empty here would wrongly crash the app at boot.
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
   OPENROUTER_API_KEY?: string;
 }
 
